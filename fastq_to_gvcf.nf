@@ -465,7 +465,7 @@ process mdirbqsr {
 
    publishDir path: "${params.output_dir}/logs", mode: 'copy', pattern: '*.std{err,out}'
    publishDir path: "${params.output_dir}/BQSR", mode: 'copy', pattern: '*.recal_table'
-   publishDir path: "${params.output_dir}/stats", mode: 'copy', pattern: '*.metrics'
+   publishDir path: "${params.output_dir}/stats", mode: 'copy', pattern: '*_metrics.txt'
 
 /*   module 'picard/2.24.0'
    module 'samtools/af811a6'

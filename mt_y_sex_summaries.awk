@@ -37,7 +37,9 @@ filenum==1&&FNR==1{
 }
 filenum==1&&FNR>1{
    mthg=$mtcols["\"Haplogroup\""];
+   gsub(/"/, "", mthg);
    mthgqual=$mtcols["\"Quality\""];
+   gsub(/"/, "", mthgqual);
 }
 #Parse the results of Yleaf:
 #Input file #2: [sample ID]_Yhaplogroup.txt
@@ -62,11 +64,22 @@ filenum==3&&/^#/{
 filenum==3&&!/^#/{
    #We may want to filter non-major scaffolds out of this sum in the future:
    nT+=$covcols["numreads"];
-   #This regex matches the autosomes, X, Y, and mtDNA:
-   if ($covcols["#rname"] ~ "^[0-9XYM][0-9T]?$") {
+#   #This regex matches the autosomes, X, Y, and mtDNA:
+#   if ($covcols["#rname"] ~ "^[0-9XYM][0-9T]?$") {
+   #This regex matches the autosomes, X, and Y:
+   if ($covcols["#rname"] ~ "^[0-9XY][0-9]?$") {
       #Calculate a weighted average so that it's a true genome-wide depth:
       dT+=$covcols["meandepth"]*($covcols["endpos"]-$covcols["startpos"]+1);
       bT+=$covcols["endpos"]-$covcols["startpos"]+1;
+      #Also keep track of just autosomal depth:
+      if ($covcols["#rname"] ~ "^[0-9][0-9]?$") {
+         dA+=$covcols["meandepth"]*($covcols["endpos"]-$covcols["startpos"]+1);
+         bA+=$covcols["endpos"]-$covcols["startpos"]+1;
+      };
+   };
+   #Also keep track of mtDNA depth:
+   if ($covcols["#rname"] == "MT") {
+      dMT+=$covcols["meandepth"];
    };
    if ($covcols["#rname"] == AlX) {
       dAlX=$covcols["meandepth"];
@@ -97,5 +110,5 @@ END{
    #Genetic sex classification based on Pontus' R_Y:
    sexPS=RY+CI < 0.016 ? "XX" : RY-CI > 0.075 ? "XY" : "ambig";
    #Print the mtDNA haplogroup, Y haplogroup, and the sex classifications:
-   print id, mthg, mthgqual, yhg, yhgqual, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dT/bT, sexPS, RY-CI, RY, RY+CI;
+   print id, mthg, mthgqual, dMT, yhg, yhgqual, dY, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dA/bA, dT/bT, sexPS, RY-CI, RY, RY+CI;
 }
