@@ -459,7 +459,7 @@ process mdirbqsr {
 
    cpus params.mdirbqsr_cpus
    memory { params.mdirbqsr_mem.plus(1).plus(task.attempt.minus(1).multiply(16))+' GB' }
-   time {task.attempt == 4 ? '48h' : params.mdirbqsr_timeout }
+   time {task.attempt >= 3 ? '48h' : params.mdirbqsr_timeout }
    errorStrategy { task.exitStatus in 134..140 ? 'retry' : 'terminate' }
    maxRetries 3
 
