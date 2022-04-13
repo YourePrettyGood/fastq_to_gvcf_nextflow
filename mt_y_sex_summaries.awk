@@ -106,9 +106,12 @@ END{
    # 1 copy, etc.
    #We can also classify based on Y normalized depth, so these classifiers
    # should also catch aneuploidies.
-   sexPFR=dX/dAlX > 0.7 ? "XX" : "XY";
+   sexPFR=dX/dAlX > 0.7 ? "XX" : "X";
+   sexPFR=sexPFR""(dY/dAlY > 0.15 ? "Y" : "");
+   sexPFRalt=dX/(dA/bA) > 0.7 ? "XX" : "X";
+   sexPFRalt=sexPFRalt""(dY/(dA/bA) > 0.15 ? "Y" : "");
    #Genetic sex classification based on Pontus' R_Y:
    sexPS=RY+CI < 0.016 ? "XX" : RY-CI > 0.075 ? "XY" : "ambig";
    #Print the mtDNA haplogroup, Y haplogroup, and the sex classifications:
-   print id, mthg, mthgqual, dMT, yhg, yhgqual, dY, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dA/bA, dT/bT, sexPS, RY-CI, RY, RY+CI;
+   print id, mthg, mthgqual, dMT, yhg, yhgqual, dY, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dA/bA, dT/bT, sexPS, RY-CI, RY, RY+CI, sexPFRalt;
 }
