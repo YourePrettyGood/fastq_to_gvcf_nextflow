@@ -113,5 +113,5 @@ END{
    #Genetic sex classification based on Pontus' R_Y:
    sexPS=RY+CI < 0.016 ? "XX" : RY-CI > 0.075 ? "XY" : "ambig";
    #Print the mtDNA haplogroup, Y haplogroup, and the sex classifications:
-   print id, mthg, mthgqual, dMT, yhg, yhgqual, dY, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dA/bA, dT/bT, sexPS, RY-CI, RY, RY+CI, sexPFRalt;
+   print id, mthg, mthgqual, dMT, yhg, yhgqual, dY, sexST, nY/nT, sexPFR, dX/dAlX, dY/dAlY, dA/bA, dT/bT, sexPS, RY-CI, RY, RY+CI, sexPFRalt, dX/(dA/bA), dY/(dA/bA);
 }
