@@ -460,7 +460,7 @@ process mdirbqsr {
    cpus params.mdirbqsr_cpus
    memory { params.mdirbqsr_mem.plus(1).plus(task.attempt.minus(1).multiply(16))+' GB' }
    time {task.attempt >= 3 ? '48h' : params.mdirbqsr_timeout }
-   errorStrategy { task.exitStatus in 134..140 ? 'retry' : 'terminate' }
+   errorStrategy { task.exitStatus in ([1]+(134..140).collect()) ? 'retry' : 'terminate' }
    maxRetries 3
 
    publishDir path: "${params.output_dir}/logs", mode: 'copy', pattern: '*.std{err,out}'
