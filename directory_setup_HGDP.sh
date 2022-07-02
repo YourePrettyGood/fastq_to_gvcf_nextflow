@@ -6,6 +6,16 @@ metadata="$1"
 batch="$2"
 #Batch size:
 n="$3"
+#Skip config copying:
+skipcfg="$4"
+if [[ -z "${skipcfg}" ]]; then
+   skipcfg=0
+fi
+#Scratch location:
+scratchdir="$5"
+if [[ -z "${scratchdir}" ]]; then
+   scratchdir="/home/pfr8/scratch60"
+fi
 
 #The HGDP metadata file here is one I created for downloading from ENA.
 #It consists of columns for the renamed FASTQ's name, the URL to the
@@ -21,8 +31,10 @@ batchid="HGDP_part${batch}_${n}indivs";
 ((prevbatch=batch-1));
 prevbatchid="HGDP_part${prevbatch}_${n}indivs";
 mkdir -p ${batchid}_fastq_to_gvcf/raw_data;
-mkdir /home/pfr8/scratch60/${batchid};
-sed "s/part${prevbatch}/part${batch}/g" < ${prevbatchid}_fastq_to_gvcf/${prevbatchid}_fastq_to_gvcf.config > ${batchid}_fastq_to_gvcf/${batchid}_fastq_to_gvcf.config;
+mkdir ${scratchdir}/${batchid};
+if [[ "${skipcfg}" -eq "0" ]]; then
+   sed "s/part${prevbatch}/part${batch}/g" < ${prevbatchid}_fastq_to_gvcf/${prevbatchid}_fastq_to_gvcf.config > ${batchid}_fastq_to_gvcf/${batchid}_fastq_to_gvcf.config;
+fi
 pushd ${batchid}_fastq_to_gvcf/;
 ((start=(batch-1)*n+1));
 tail -n+2 ${metadata} | \
