@@ -4,6 +4,7 @@
  *  AdapterRemoval -> BWA-MEM -> samtools sort -> samtools merge ->         *
  *  Picard MarkDuplicates (scattered) -> GATK IndelRealigner (scattered) -> *
  *  GATK BQSR (half-scattered) -> samtools merge (gather) + ApplyBQSR ->    *
+ *  dedup_merged_bams ->                                                    *
  *  GATK HaplotypeCaller (scattered) -> Picard MergeVcfs (gather)           *
  * QC steps:                                                                *
  *  FastQC, CollectMultipleMetrics, CollectWgsMetrics,                      *
@@ -48,10 +49,12 @@ params.fix_ena_readname = "0"
 //Reference-related parameters for the pipeline:
 params.ref_prefix = "/gpfs/gibbs/pi/tucci/pfr8/refs"
 params.ref = "${params.ref_prefix}/1kGP/hs37d5/hs37d5.fa"
+params.autosomes = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22"
+params.sexchroms = "X,Y"
 //File of file names for scattering interval BED files for MD, IR, and BQSR:
 params.scatteredBAM_bed_fofn = "${params.ref_prefix}/1kGP/hs37d5/scatter_intervals/hs37d5_thresh_200Mbp_allscafs_scattered_BEDs.fofn"
 //File of file names for scattering interval BED files for HC:
-params.scatteredHC_bed_fofn = "${params.ref_prefix}/1kGP/hs37d5/scatter_intervals/hs37d5_thresh_100Mbp_noEBV_nodecoy_scattered_BEDs.fofn"
+params.scatteredHC_bed_fofn = "${params.ref_prefix}/1kGP/hs37d5/scatter_intervals/hs37d5_thresh_100Mbp_noEBV_nodecoy_sexsep_scattered_BEDs.fofn"
 
 //Databases of SNPs and INDELs for IR, BQSR, and VQSR:
 params.tgp_indels = "${params.ref_prefix}/Broad/b37/1000G_phase1.indels.b37.vcf"
@@ -72,6 +75,16 @@ Channel
    .map { item -> [item.get(1), item.get(2), item.get(3)] }
    .tap { fastq_pairs }
    .subscribe { println "Added ${it[1]} to fastq_pairs channel" }
+
+//Set up the channel for the recall metadata file contents:
+Channel
+   .fromPath(params.metadata_file, checkIfExists: true)
+   .ifEmpty { error "Unable to find recall metadata file: ${params.metadata_file}" }
+   .splitCsv(sep: "\t", header: true)
+   .map { [ it.Sample, it.LibraryType ] }
+   .ifEmpty { error "Recall metadata file is missing columns named Sample and LibraryType" }
+   .tap { metadata }
+   .subscribe { println "Added ${it[0]} metadata to metadata channel" }
 
 //Set up the file channels for the ref and its various index components:
 //Inspired by the IARC alignment-nf pipeline
@@ -205,6 +218,10 @@ params.bqsr_timeout = '24h'
 params.metrics_cpus = 1
 params.metrics_mem = 32
 params.metrics_timeout = '24h'
+//dedup_merged_bams
+params.dedup_cpus = 1
+params.dedup_mem = 8
+params.dedup_timeout = '24h'
 //GATK HaplotypeCaller
 params.hc_cpus = 4
 params.hc_mem = 24
@@ -445,7 +462,7 @@ process geneticsex {
    tuple val(sample_id), file("${sample_id}.bam"), file("${sample_id}.bam.bai") from sex_bams
 
    output:
-   path "${sample_id}_coverage.tsv" into sex_results
+   tuple val(sample_id), path("${sample_id}_coverage.tsv") into ploidy_estimates
 
    shell:
    '''
@@ -560,7 +577,7 @@ process mergebqsrbams {
 
    publishDir path: "${params.output_dir}/logs", mode: 'copy', pattern: '*.std{err,out}'
    publishDir path: "${params.output_dir}/BQSR", mode: 'copy', pattern: '*.recal_table'
-   publishDir path: "${params.output_dir}/BQSR_BAMs", mode: 'copy', pattern: '*_MD_IR_recal.ba{m,m.bai}'
+//   publishDir path: "${params.output_dir}/BQSR_BAMs", mode: 'copy', pattern: '*_MD_IR_recal.ba{m,m.bai}'
 
 //   module 'samtools/af811a6'
 //   module 'GATK/4.1.8.1-Java-1.8'
@@ -637,6 +654,34 @@ process bammetrics {
 //   java -Xmx!{params.metrics_mem}g -Xms!{params.metrics_mem}g -jar ${PICARD} CollectOxoGMetrics I=!{sample_id}_MD_IR_recal.bam R=!{ref} DB_SNP=!{known_dbsnp} O=!{sample_id}_picardmetrics_OxoG_metrics.txt 2> !{sample_id}_picard_OxoG.stderr > !{sample_id}_picard_OxoG.stdout
 }
 
+process dedup_merged_bams {
+   tag "${sample_id}"
+
+   cpus params.dedup_cpus
+   memory { params.dedup_mem.plus(task.attempt.minus(1).multiply(16))+' GB' }
+   time { task.attempt >= 2 ? '48h' : params.dedup_timeout }
+   errorStrategy { task.exitStatus in 134..140 ? 'retry' : 'terminate' }
+   maxRetries 3
+
+   publishDir path: "${params.output_dir}/logs", mode: 'copy', pattern: '*.std{err,out}'
+   publishDir path: "${params.output_dir}/BQSR_filtered_BAMs", mode: 'copy', pattern: '*_filtered.ba{m,m.bai}'
+
+   input:
+   tuple val(sample_id), path(bam), path(bai) from merged_bqsr_bams
+
+   output:
+   tuple path("${sample_id}_dedup_merged_bams.stderr"), path("${sample_id}_dedup_merged_bams.stdout") into filter_logs
+   tuple val(sample_id), path("${sample_id}_MD_IR_recal_filtered.bam"), path("${sample_id}_MD_IR_recal_filtered.bam.bai") into filtered_bams
+
+   shell:
+   '''
+   module load !{params.mod_dedup}
+   module load !{params.mod_samtools}
+   dedup_merged_bams -i !{bam} -o !{sample_id}_MD_IR_recal_filtered.bam -t !{task.cpus} -d 2> !{sample_id}_dedup_merged_bams.stderr > !{sample_id}_dedup_merged_bams.stdout
+   samtools index !{sample_id}_MD_IR_recal_filtered.bam
+   '''
+}
+
 process gatk_hc {
    tag "${sample_id}_${ref_chunk}"
 
@@ -651,11 +696,11 @@ process gatk_hc {
 //   module 'GATK/4.1.8.1-Java-1.8'
 
    input:
-   tuple val(sample_id), file("${sample_id}_MD_IR_recal.bam"), file("${sample_id}_MD_IR_recal.bam.bai") from merged_bqsr_bams
-   each file(intervals) from ref_scatteredHC
-   file ref
-   file ref_dict
-   file ref_fai
+   tuple val(sample_id), path(bam), path(bai), path("${sample_id}_coverage.tsv"), val(librarytype) from filtered_bams.join(ploidy_estimates, by: 0, failOnDuplicate: true, failOnMismatch: true).join(metadata, by: 0, failOnDuplicate: true, failOnMismatch: true)
+   each path(intervals) from ref_scatteredHC
+   path ref
+   path ref_dict
+   path ref_fai
 
    output:
    tuple val(sample_id), file("${sample_id}_${ref_chunk}.g.vcf.gz") into hc_scattered_gvcfs
@@ -666,8 +711,14 @@ process gatk_hc {
    hc_retry_mem = params.hc_mem.plus(task.attempt.minus(1).multiply(8))
    ref_chunk = (intervals.getSimpleName() =~ params.ref_chunk_regex)[0][1]
    '''
+   pcrfree="CONSERVATIVE"
+   shopt -s nocasematch
+   if [[ "!{librarytype}" =~ "free" ]]; then
+      pcrfree="NONE"
+   fi
+   ploidy=$(!{projectDir}/estimate_chrom_ploidy.awk -v "autosomes=!{params.autosomes}" -v "sexchroms=!{params.sexchroms}" !{sample_id}_coverage.tsv !{intervals})
    module load !{params.mod_gatk4}
-   gatk --java-options "-Xms!{hc_retry_mem}g -Xmx!{hc_retry_mem}g" HaplotypeCaller -R !{ref} -I !{sample_id}_MD_IR_recal.bam -L !{intervals} -ERC GVCF --native-pair-hmm-threads !{task.cpus} -O !{sample_id}_!{ref_chunk}.g.vcf.gz 2> !{sample_id}_!{ref_chunk}_haplotypecaller.stderr > !{sample_id}_!{ref_chunk}_haplotypecaller.stdout
+   gatk --java-options "-Xms!{hc_retry_mem}g -Xmx!{hc_retry_mem}g" HaplotypeCaller -R !{ref} -I !{bam} -L !{intervals} -ERC GVCF --native-pair-hmm-threads !{task.cpus} -ploidy ${ploidy} --pcr-indel-model ${pcrfree} -O !{sample_id}_!{ref_chunk}.g.vcf.gz 2> !{sample_id}_!{ref_chunk}_haplotypecaller.stderr > !{sample_id}_!{ref_chunk}_haplotypecaller.stdout
    '''
 }
 
